@@ -108,7 +108,7 @@ jobs:
   release:
     name: Create Release
     runs-on: ubuntu-latest
-    needs: [build-linux, build-macos]
+    needs: [build-linux, build-macos, docker]
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
