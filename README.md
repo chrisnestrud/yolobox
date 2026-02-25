@@ -94,6 +94,7 @@ yolobox help                # Show help
 | `--ssh-agent` | Forward SSH agent socket |
 | `--no-network` | Disable network access |
 | `--network <name>` | Join specific network (e.g., docker compose) |
+| `--pod <name>` | Join existing Podman pod (shares its network) |
 | `--no-yolo` | Disable auto-confirmations (mindful mode) |
 | `--readonly-project` | Mount project read-only (outputs go to `/output`) |
 | `--claude-config` | Copy host `~/.claude` config into container |
