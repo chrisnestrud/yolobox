@@ -96,6 +96,7 @@ yolobox help                # Show help
 | `--network <name>` | Join specific network (e.g., docker compose) |
 | `--pod <name>` | Join existing Podman pod (shares its network) |
 | `--no-yolo` | Disable auto-confirmations (mindful mode) |
+| `--scratch` | Start with a fresh home/cache (nothing persists) |
 | `--readonly-project` | Mount project read-only (outputs go to `/output`) |
 | `--claude-config` | Copy host `~/.claude` config into container |
 | `--gemini-config` | Copy host `~/.gemini` config into container |
@@ -104,29 +105,15 @@ yolobox help                # Show help
 | `--copy-agent-instructions` | Copy global agent instruction files (see below) |
 | `--docker` | Mount Docker socket and join shared network (see below) |
 | `--cpus <num>` | Limit CPUs available to the container (accepts fractions like `3.5`) |
-| `--cpu-shares <value>` | Set relative CPU shares (default 1024) |
-| `--cpu-quota <value>` | Limit total CFS quota in microseconds |
-| `--cpu-period <value>` | Set the CFS period used with `--cpu-quota` |
-| `--cpuset-cpus <list>` | Pin workloads to specific CPUs (e.g., `0-3` or `0,2`) |
-| `--cpuset-mems <list>` | Restrict workloads to specific NUMA memory nodes |
 | `--memory <limit>` | Hard memory limit (e.g., `8g`, `1024m`) |
-| `--memory-reservation <limit>` | Soft memory reservation (container may burst above) |
-| `--memory-swap <limit>` | Total memory + swap (`-1` for unlimited) |
-| `--memory-swappiness <0-100>` | Tune kernel swappiness hint |
-| `--pids-limit <num>` | Maximum number of processes/threads |
 | `--shm-size <size>` | Size of `/dev/shm` tmpfs (useful for browsers/playwright) |
-| `--oom-score-adj <value>` | Adjust host OOM killer scoring (-1000 to 1000) |
-| `--oom-kill-disable` | Disable the kernel OOM killer for the container |
-| `--ulimit <spec>` | Set ulimit entries (repeatable, e.g., `nofile=1024:2048`) |
+| `--gpus <spec>` | Pass GPUs (Docker/Podman notation, e.g., `all`, `device=0`) |
 | `--device <src:dest>` | Add host devices in the container (repeatable) |
-| `--device-cgroup-rule <rule>` | Fine-grained device cgroup rules (repeatable) |
 | `--cap-add <cap>` | Add Linux capabilities (repeatable) |
 | `--cap-drop <cap>` | Drop Linux capabilities (repeatable) |
-| `--security-opt <opt>` | Pass security options (seccomp/apparmor/etc.) |
-| `--sysctl <key=value>` | Apply sysctl overrides inside the container |
-| `--gpus <spec>` | Pass GPUs (Docker/Podman notation, e.g., `all`, `device=0`) |
+| `--runtime-arg <flag>` | Pass raw runtime flags directly to Docker/Podman (repeatable) |
 
-> **Resource & security controls:** These flags are passed directly to the underlying runtime. Docker and Podman support the full set above; Apple's `container` runtime ignores options it doesn't understand.
+> **Resource & security controls:** The table lists the common knobs baked into yolobox. Anything else (e.g., `--ulimit nofile=4096:8192`, `--security-opt seccomp=unconfined`) can be forwarded verbatim with `--runtime-arg <flag>` as many times as needed. Docker and Podman accept the passthrough flags unchanged; Apple's `container` runtime ignores options it doesn't understand.
 
 > **SSH agent (macOS):** On macOS, `--ssh-agent` requires the Docker VM to forward the SSH agent. For **Colima**: edit `~/.colima/default/colima.yaml`, set `forwardAgent: true`, then restart (`colima stop && colima start`). **Docker Desktop** forwards the agent automatically.
 
@@ -152,6 +139,7 @@ cpus = "4"
 memory = "8g"
 cap_add = ["SYS_PTRACE"]
 devices = ["/dev/kvm:/dev/kvm"]
+runtime_args = ["--security-opt", "seccomp=unconfined"]
 ```
 
 You can also create `.yolobox.toml` in your project for project-specific settings:
@@ -164,6 +152,8 @@ shm_size = "2g"
 ```
 
 Priority: CLI flags > project config > global config > defaults.
+
+Each `runtime_args` entry is a single CLI argument. For flags that take a value, add them as separate entries so `--security-opt seccomp=unconfined` becomes `["--security-opt", "seccomp=unconfined"]`.
 
 > **Note:** Setting `claude_config = true` or `gemini_config = true` in your config will copy your host config on **every** container start, overwriting any changes made inside the container (including auth and history). Prefer using `--claude-config` or `--gemini-config` for one-time syncs.
 
