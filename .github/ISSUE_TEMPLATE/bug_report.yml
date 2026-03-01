@@ -1,0 +1,36 @@
+name: Bug report
+description: Something isn't working
+labels: ["bug"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: yolobox version
+      description: Output of `yolobox version`
+      placeholder: "v0.6.0"
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: "OS and container runtime"
+      placeholder: "macOS 15.3, Colima + Docker 27.5"
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Include the command you ran and the full error output.
+      placeholder: |
+        $ yolobox run --claude-config claude
+        error: ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: false
