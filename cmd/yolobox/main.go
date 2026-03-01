@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -68,6 +69,8 @@ var toolShortcuts = []string{
 	"copilot",
 }
 
+var sizePattern = regexp.MustCompile(`^\d+(?:\.\d+)?(?:[kKmMgGtTpP](?:i?[bB]?)?|[bB])?$`)
+
 type Config struct {
 	Runtime               string   `toml:"runtime"`
 	Image                 string   `toml:"image"`
@@ -86,6 +89,16 @@ type Config struct {
 	GhToken               bool     `toml:"gh_token"`
 	CopyAgentInstructions bool     `toml:"copy_agent_instructions"`
 	Docker                bool     `toml:"docker"`
+
+	// Resource limits
+	CPUs        string   `toml:"cpus"`
+	Memory      string   `toml:"memory"`
+	ShmSize     string   `toml:"shm_size"`
+	GPUs        string   `toml:"gpus"`
+	Devices     []string `toml:"devices"`
+	CapAdd      []string `toml:"cap_add"`
+	CapDrop     []string `toml:"cap_drop"`
+	RuntimeArgs []string `toml:"runtime_args"`
 
 	// Runtime-only fields (not persisted to config file)
 	Setup bool `toml:"-"` // Run interactive setup before starting
@@ -340,6 +353,14 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "  --gh-token            Forward GitHub CLI token (from gh auth token)")
 	fmt.Fprintln(os.Stderr, "  --copy-agent-instructions  Copy global agent instruction files")
 	fmt.Fprintln(os.Stderr, "  --docker              Mount Docker socket and join shared network")
+	fmt.Fprintln(os.Stderr, "  --cpus <count>        Limit number of CPUs (supports fractions)")
+	fmt.Fprintln(os.Stderr, "  --memory <size>       Cap memory usage (e.g., 4g, 512m)")
+	fmt.Fprintln(os.Stderr, "  --shm-size <size>     Size of /dev/shm (e.g., 1g for Playwright)")
+	fmt.Fprintln(os.Stderr, "  --gpus <spec>         GPU devices to add (e.g., all, device=0)")
+	fmt.Fprintln(os.Stderr, "  --device <spec>       Pass a host device through (repeatable)")
+	fmt.Fprintln(os.Stderr, "  --cap-add <name>      Add a Linux capability (repeatable)")
+	fmt.Fprintln(os.Stderr, "  --cap-drop <name>     Drop a Linux capability (repeatable)")
+	fmt.Fprintln(os.Stderr, "  --runtime-arg <flag>  Raw runtime flag passthrough (repeatable)")
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintf(os.Stderr, "%sCONFIG:%s\n", colorBold, colorReset)
 	fmt.Fprintln(os.Stderr, "  Global:  ~/.config/yolobox/config.toml")
@@ -390,6 +411,16 @@ func parseBaseFlags(name string, args []string, projectDir string) (Config, []st
 		setup                 bool
 		mounts                stringSliceFlag
 		envVars               stringSliceFlag
+
+		// Resource limits & security
+		cpus        string
+		memoryLimit string
+		shmSize     string
+		gpus        string
+		devices     stringSliceFlag
+		capAdd      stringSliceFlag
+		capDrop     stringSliceFlag
+		runtimeArgs stringSliceFlag
 	)
 
 	fs.StringVar(&runtimeFlag, "runtime", "", "container runtime")
@@ -410,6 +441,16 @@ func parseBaseFlags(name string, args []string, projectDir string) (Config, []st
 	fs.BoolVar(&setup, "setup", false, "run interactive setup before starting")
 	fs.Var(&mounts, "mount", "extra mount src:dst")
 	fs.Var(&envVars, "env", "environment variable KEY=value")
+
+	// Resource limits & security
+	fs.StringVar(&cpus, "cpus", "", "limit number of CPUs (supports fractions)")
+	fs.StringVar(&memoryLimit, "memory", "", "memory limit (e.g., 8g)")
+	fs.StringVar(&shmSize, "shm-size", "", "size of /dev/shm (e.g., 1g)")
+	fs.StringVar(&gpus, "gpus", "", "GPU devices to add (e.g., all or device IDs)")
+	fs.Var(&devices, "device", "add host device inside the container (repeatable)")
+	fs.Var(&capAdd, "cap-add", "add Linux capability (repeatable)")
+	fs.Var(&capDrop, "cap-drop", "drop Linux capability (repeatable)")
+	fs.Var(&runtimeArgs, "runtime-arg", "raw runtime flag to pass through to the container engine (repeatable)")
 
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -474,8 +515,37 @@ func parseBaseFlags(name string, args []string, projectDir string) (Config, []st
 		cfg.Env = append(cfg.Env, envVars...)
 	}
 
+	if cpus != "" {
+		cfg.CPUs = cpus
+	}
+	if memoryLimit != "" {
+		cfg.Memory = memoryLimit
+	}
+	if shmSize != "" {
+		cfg.ShmSize = shmSize
+	}
+	if gpus != "" {
+		cfg.GPUs = gpus
+	}
+
+	if len(devices) > 0 {
+		cfg.Devices = append(cfg.Devices, devices...)
+	}
+	if len(capAdd) > 0 {
+		cfg.CapAdd = append(cfg.CapAdd, capAdd...)
+	}
+	if len(capDrop) > 0 {
+		cfg.CapDrop = append(cfg.CapDrop, capDrop...)
+	}
+	if len(runtimeArgs) > 0 {
+		cfg.RuntimeArgs = append(cfg.RuntimeArgs, runtimeArgs...)
+	}
+
 	// Validate conflicting options after config + CLI values have been merged.
 	if err := validateConfigConflicts(cfg); err != nil {
+		return cfg, nil, err
+	}
+	if err := validateRuntimeOptions(cfg); err != nil {
 		return cfg, nil, err
 	}
 
@@ -516,6 +586,64 @@ func validateRuntimeConstraints(cfg Config) error {
 		return fmt.Errorf("--pod requires the podman runtime (set --runtime podman)")
 	}
 	return nil
+}
+
+func validateRuntimeOptions(cfg Config) error {
+	if cfg.CPUs != "" {
+		cpuVal, err := strconv.ParseFloat(cfg.CPUs, 64)
+		if err != nil || cpuVal <= 0 {
+			return fmt.Errorf("invalid --cpus value %q: must be a positive number", cfg.CPUs)
+		}
+	}
+
+	for _, field := range []struct {
+		name  string
+		value string
+	}{
+		{"memory", cfg.Memory},
+		{"shm-size", cfg.ShmSize},
+	} {
+		if field.value == "" {
+			continue
+		}
+		if !sizePattern.MatchString(field.value) {
+			return fmt.Errorf("invalid --%s value %q: expected a number optionally followed by k/m/g/t", field.name, field.value)
+		}
+	}
+
+	for _, arg := range cfg.RuntimeArgs {
+		if strings.TrimSpace(arg) == "" {
+			return fmt.Errorf("--runtime-arg entries cannot be blank")
+		}
+	}
+
+	return nil
+}
+
+func warnSecurityRelaxations(cfg Config) {
+	var categories []string
+	if len(cfg.CapAdd) > 0 {
+		categories = append(categories, "--cap-add")
+	}
+	if len(cfg.Devices) > 0 {
+		categories = append(categories, "--device")
+	}
+	if runtimeArgsContainUnconfined(cfg.RuntimeArgs) {
+		categories = append(categories, "--security-opt seccomp=unconfined")
+	}
+	if len(categories) == 0 {
+		return
+	}
+	warn("Security-impacting runtime flags active (%s). Ensure you trust the workload.", strings.Join(categories, ", "))
+}
+
+func runtimeArgsContainUnconfined(args []string) bool {
+	for _, arg := range args {
+		if strings.Contains(strings.ToLower(arg), "seccomp=unconfined") {
+			return true
+		}
+	}
+	return false
 }
 
 func defaultConfig() Config {
@@ -623,6 +751,31 @@ func mergeConfig(dst *Config, src Config) {
 	if src.Docker {
 		dst.Docker = true
 	}
+
+	if src.CPUs != "" {
+		dst.CPUs = src.CPUs
+	}
+	if src.Memory != "" {
+		dst.Memory = src.Memory
+	}
+	if src.ShmSize != "" {
+		dst.ShmSize = src.ShmSize
+	}
+	if src.GPUs != "" {
+		dst.GPUs = src.GPUs
+	}
+	if len(src.Devices) > 0 {
+		dst.Devices = append([]string{}, src.Devices...)
+	}
+	if len(src.CapAdd) > 0 {
+		dst.CapAdd = append([]string{}, src.CapAdd...)
+	}
+	if len(src.CapDrop) > 0 {
+		dst.CapDrop = append([]string{}, src.CapDrop...)
+	}
+	if len(src.RuntimeArgs) > 0 {
+		dst.RuntimeArgs = append([]string{}, src.RuntimeArgs...)
+	}
 }
 
 func runShell(cfg Config) error {
@@ -656,6 +809,30 @@ func runShell(cfg Config) error {
 			if !cfg.NoYolo {
 				cfg.NoYolo = newCfg.NoYolo
 			}
+			if cfg.CPUs == "" {
+				cfg.CPUs = newCfg.CPUs
+			}
+			if cfg.Memory == "" {
+				cfg.Memory = newCfg.Memory
+			}
+			if cfg.ShmSize == "" {
+				cfg.ShmSize = newCfg.ShmSize
+			}
+			if cfg.GPUs == "" {
+				cfg.GPUs = newCfg.GPUs
+			}
+			if len(cfg.Devices) == 0 {
+				cfg.Devices = append([]string{}, newCfg.Devices...)
+			}
+			if len(cfg.CapAdd) == 0 {
+				cfg.CapAdd = append([]string{}, newCfg.CapAdd...)
+			}
+			if len(cfg.CapDrop) == 0 {
+				cfg.CapDrop = append([]string{}, newCfg.CapDrop...)
+			}
+			if len(cfg.RuntimeArgs) == 0 {
+				cfg.RuntimeArgs = append([]string{}, newCfg.RuntimeArgs...)
+			}
 		}
 	}
 
@@ -686,6 +863,7 @@ func runCommand(cfg Config, command []string, interactive bool) error {
 	if err := validateRuntimeConstraints(cfg); err != nil {
 		return err
 	}
+	warnSecurityRelaxations(cfg)
 
 	// Warn if Docker has low memory (can cause OOM with Claude)
 	checkDockerMemory(cfg.Runtime)
@@ -735,6 +913,16 @@ func printConfig(cfg Config) error {
 	fmt.Printf("%sgh_token:%s %t\n", colorBold, colorReset, cfg.GhToken)
 	fmt.Printf("%scopy_agent_instructions:%s %t\n", colorBold, colorReset, cfg.CopyAgentInstructions)
 	fmt.Printf("%sdocker:%s %t\n", colorBold, colorReset, cfg.Docker)
+
+	printStringConfigField("cpus", cfg.CPUs)
+	printStringConfigField("memory", cfg.Memory)
+	printStringConfigField("shm_size", cfg.ShmSize)
+	printStringConfigField("gpus", cfg.GPUs)
+	printSliceConfigField("devices", cfg.Devices)
+	printSliceConfigField("cap_add", cfg.CapAdd)
+	printSliceConfigField("cap_drop", cfg.CapDrop)
+	printSliceConfigField("runtime_args", cfg.RuntimeArgs)
+
 	if len(cfg.Mounts) > 0 {
 		fmt.Printf("%smounts:%s\n", colorBold, colorReset)
 		for _, m := range cfg.Mounts {
@@ -748,6 +936,28 @@ func printConfig(cfg Config) error {
 		}
 	}
 	return nil
+}
+
+func printStringConfigField(name, value string) {
+	fmt.Printf("%s%s:%s %s\n", colorBold, name, colorReset, configValueOrNotSet(value))
+}
+
+func printSliceConfigField(name string, values []string) {
+	if len(values) == 0 {
+		fmt.Printf("%s%s:%s (none)\n", colorBold, name, colorReset)
+		return
+	}
+	fmt.Printf("%s%s:%s\n", colorBold, name, colorReset)
+	for _, v := range values {
+		fmt.Printf("  - %s\n", v)
+	}
+}
+
+func configValueOrNotSet(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return "(not set)"
+	}
+	return value
 }
 
 // globalConfigExists checks if the global config file exists
@@ -799,6 +1009,30 @@ func saveGlobalConfig(cfg Config) error {
 	if cfg.Pod != "" {
 		lines = append(lines, fmt.Sprintf("pod = %q", cfg.Pod))
 	}
+	if cfg.CPUs != "" {
+		lines = append(lines, fmt.Sprintf("cpus = %q", cfg.CPUs))
+	}
+	if cfg.Memory != "" {
+		lines = append(lines, fmt.Sprintf("memory = %q", cfg.Memory))
+	}
+	if cfg.ShmSize != "" {
+		lines = append(lines, fmt.Sprintf("shm_size = %q", cfg.ShmSize))
+	}
+	if cfg.GPUs != "" {
+		lines = append(lines, fmt.Sprintf("gpus = %q", cfg.GPUs))
+	}
+	if len(cfg.Devices) > 0 {
+		lines = append(lines, fmt.Sprintf("devices = %s", formatTomlStringSlice(cfg.Devices)))
+	}
+	if len(cfg.CapAdd) > 0 {
+		lines = append(lines, fmt.Sprintf("cap_add = %s", formatTomlStringSlice(cfg.CapAdd)))
+	}
+	if len(cfg.CapDrop) > 0 {
+		lines = append(lines, fmt.Sprintf("cap_drop = %s", formatTomlStringSlice(cfg.CapDrop)))
+	}
+	if len(cfg.RuntimeArgs) > 0 {
+		lines = append(lines, fmt.Sprintf("runtime_args = %s", formatTomlStringSlice(cfg.RuntimeArgs)))
+	}
 
 	content := strings.Join(lines, "\n")
 	if content != "" {
@@ -810,6 +1044,38 @@ func saveGlobalConfig(cfg Config) error {
 	}
 
 	return nil
+}
+
+func formatTomlStringSlice(values []string) string {
+	quoted := make([]string, 0, len(values))
+	for _, v := range values {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
+		quoted = append(quoted, fmt.Sprintf("%q", v))
+	}
+	if len(quoted) == 0 {
+		return "[]"
+	}
+	return fmt.Sprintf("[%s]", strings.Join(quoted, ", "))
+}
+
+func parseMultilineInput(input string) []string {
+	if input == "" {
+		return nil
+	}
+	input = strings.ReplaceAll(input, "\r\n", "\n")
+	lines := strings.Split(input, "\n")
+	var values []string
+	for _, line := range lines {
+		val := strings.TrimSpace(line)
+		if val == "" {
+			continue
+		}
+		values = append(values, val)
+	}
+	return values
 }
 
 // yoloboxTheme returns a custom huh theme matching the yolobox brand
@@ -854,6 +1120,14 @@ func runSetup() (Config, error) {
 	// Form fields
 	var selectedOptions []string
 	podName := cfg.Pod
+	cpuLimit := cfg.CPUs
+	memoryLimit := cfg.Memory
+	shmLimit := cfg.ShmSize
+	gpuSetting := cfg.GPUs
+	deviceList := strings.Join(cfg.Devices, "\n")
+	capAddList := strings.Join(cfg.CapAdd, "\n")
+	capDropList := strings.Join(cfg.CapDrop, "\n")
+	runtimeArgList := strings.Join(cfg.RuntimeArgs, "\n")
 
 	// Initialize from current config
 	if cfg.GitConfig {
@@ -908,6 +1182,53 @@ func runSetup() (Config, error) {
 				Placeholder("e.g. mypod").
 				Value(&podName),
 		),
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Default CPU limit (--cpus)").
+				Description("Optional, supports fractions like 1.5").
+				Placeholder("e.g. 2").
+				Value(&cpuLimit),
+			huh.NewInput().
+				Title("Default memory limit (--memory)").
+				Description("Optional, e.g., 4g or 512m").
+				Placeholder("e.g. 4g").
+				Value(&memoryLimit),
+			huh.NewInput().
+				Title("Default shm size (--shm-size)").
+				Description("Optional, e.g., 1g for Playwright").
+				Placeholder("e.g. 1g").
+				Value(&shmLimit),
+			huh.NewInput().
+				Title("Default GPUs (--gpus)").
+				Description("Optional, e.g., all or device=0").
+				Placeholder("e.g. all").
+				Value(&gpuSetting),
+		),
+		huh.NewGroup(
+			huh.NewText().
+				Title("Devices (--device)").
+				Description("One per line, e.g., /dev/kvm:/dev/kvm").
+				Lines(3).
+				Placeholder("/dev/kvm:/dev/kvm").
+				Value(&deviceList),
+			huh.NewText().
+				Title("Added capabilities (--cap-add)").
+				Description("One per line, e.g., SYS_PTRACE").
+				Lines(3).
+				Placeholder("SYS_PTRACE").
+				Value(&capAddList),
+			huh.NewText().
+				Title("Dropped capabilities (--cap-drop)").
+				Description("One per line").
+				Lines(3).
+				Value(&capDropList),
+			huh.NewText().
+				Title("Raw runtime args (--runtime-arg)").
+				Description("One per line, passed directly to Docker/Podman").
+				Lines(4).
+				Placeholder("--security-opt seccomp=unconfined").
+				Value(&runtimeArgList),
+		),
 	).WithTheme(yoloboxTheme())
 
 	err := form.Run()
@@ -926,8 +1247,19 @@ func runSetup() (Config, error) {
 	cfg.NoNetwork = contains(selectedOptions, "no_network")
 	cfg.NoYolo = contains(selectedOptions, "no_yolo")
 	cfg.Pod = strings.TrimSpace(podName)
+	cfg.CPUs = strings.TrimSpace(cpuLimit)
+	cfg.Memory = strings.TrimSpace(memoryLimit)
+	cfg.ShmSize = strings.TrimSpace(shmLimit)
+	cfg.GPUs = strings.TrimSpace(gpuSetting)
+	cfg.Devices = parseMultilineInput(deviceList)
+	cfg.CapAdd = parseMultilineInput(capAddList)
+	cfg.CapDrop = parseMultilineInput(capDropList)
+	cfg.RuntimeArgs = parseMultilineInput(runtimeArgList)
 
 	if err := validateConfigConflicts(cfg); err != nil {
+		return cfg, err
+	}
+	if err := validateRuntimeOptions(cfg); err != nil {
 		return cfg, err
 	}
 
@@ -969,11 +1301,15 @@ func splitToolArgs(args []string) (yoloboxArgs, toolArgs []string) {
 		"gemini-config": true, "git-config": true, "gh-token": true,
 		"copy-agent-instructions": true, "docker": true, "setup": true, "mount": true,
 		"env": true, "h": true, "help": true,
+		"cpus": true, "memory": true, "shm-size": true, "gpus": true,
+		"device": true, "cap-add": true, "cap-drop": true, "runtime-arg": true,
 	}
 
 	flagsWithValues := map[string]bool{
 		"runtime": true, "image": true, "network": true, "pod": true,
-		"mount": true, "env": true,
+		"mount": true, "env": true, "cpus": true, "memory": true,
+		"shm-size": true, "device": true, "cap-add": true, "cap-drop": true,
+		"gpus": true, "runtime-arg": true,
 	}
 
 	i := 0
@@ -1349,6 +1685,13 @@ func ensureDockerNetwork(runtimeName string, networkName string) error {
 	return nil
 }
 
+func appendRunFlag(args []string, flagName, value string) []string {
+	if value == "" {
+		return args
+	}
+	return append(args, "--"+flagName, value)
+}
+
 func buildRunArgs(cfg Config, projectDir string, command []string, interactive bool) ([]string, []string, error) {
 	absProject, err := filepath.Abs(projectDir)
 	if err != nil {
@@ -1602,6 +1945,21 @@ func buildRunArgs(cfg Config, projectDir string, command []string, interactive b
 		args = append(args, "-v", resolved)
 	}
 
+	// Resource & security controls
+	args = appendRunFlag(args, "cpus", cfg.CPUs)
+	args = appendRunFlag(args, "memory", cfg.Memory)
+	args = appendRunFlag(args, "shm-size", cfg.ShmSize)
+	args = appendRunFlag(args, "gpus", cfg.GPUs)
+	for _, d := range cfg.Devices {
+		args = append(args, "--device", d)
+	}
+	for _, c := range cfg.CapAdd {
+		args = append(args, "--cap-add", c)
+	}
+	for _, c := range cfg.CapDrop {
+		args = append(args, "--cap-drop", c)
+	}
+
 	// SSH agent forwarding
 	if cfg.SSHAgent {
 		if appleContainer {
@@ -1641,6 +1999,10 @@ func buildRunArgs(cfg Config, projectDir string, command []string, interactive b
 		} else if cfg.Network != "" {
 			args = append(args, "--network", cfg.Network)
 		}
+	}
+
+	if len(cfg.RuntimeArgs) > 0 {
+		args = append(args, cfg.RuntimeArgs...)
 	}
 
 	args = append(args, cfg.Image)
