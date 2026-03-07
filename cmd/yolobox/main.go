@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -1680,6 +1681,16 @@ func buildRunArgs(cfg Config, projectDir string, command []string, interactive b
 	args = append(args, "-w", absProject)
 	args = append(args, "-e", "YOLOBOX=1")
 	args = append(args, "-e", "YOLOBOX_PROJECT_PATH="+absProject)
+
+	// Pass host UID/GID so the entrypoint can match the yolo user to the
+	// project directory owner (fixes virtiofs permission issues on Colima 0.10+).
+	if info, err := os.Stat(absProject); err == nil {
+		if stat, ok := info.Sys().(*syscall.Stat_t); ok {
+			args = append(args, "-e", fmt.Sprintf("YOLOBOX_HOST_UID=%d", stat.Uid))
+			args = append(args, "-e", fmt.Sprintf("YOLOBOX_HOST_GID=%d", stat.Gid))
+		}
+	}
+
 	if cfg.NoYolo {
 		args = append(args, "-e", "NO_YOLO=1")
 	}

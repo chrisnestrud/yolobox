@@ -171,10 +171,29 @@ ENV NPM_CONFIG_PREFIX=/home/yolo/.npm-global
 # Add wrapper dir, npm-global bin, and ~/.local/bin to PATH (wrappers take priority)
 ENV PATH="/opt/yolobox/bin:/home/yolo/.npm-global/bin:/home/yolo/.local/bin:$PATH"
 
+# UID-fix helper: runs as root to change yolo UID/GID and exec as the new user.
+# Called by the entrypoint when the host project dir owner differs from yolo's UID.
+RUN printf '%s\n' \
+    '#!/bin/bash' \
+    'HOST_UID=$1; HOST_GID=$2; shift 2; shift' \
+    'usermod -u "$HOST_UID" -o yolo 2>/dev/null' \
+    'groupmod -g "$HOST_GID" -o yolo 2>/dev/null' \
+    'chown -R "$HOST_UID:$HOST_GID" /home/yolo 2>/dev/null' \
+    'exec setpriv --reuid="$HOST_UID" --regid="$HOST_GID" --init-groups -- "$@"' \
+    > /usr/local/bin/yolobox-uid-fix.sh && \
+    chmod +x /usr/local/bin/yolobox-uid-fix.sh
+
 # Create entrypoint script
 RUN mkdir -p /host-claude /host-gemini /host-git /host-agent-instructions /host-files && \
     printf '%s\n' \
     '#!/bin/bash' \
+    '' \
+    '# Match yolo UID/GID to host project owner (fixes virtiofs on Colima 0.10+)' \
+    '# Must run FIRST: after remapping, the named volume is owned by the new UID,' \
+    '# so subsequent runs cannot access /home/yolo until the fix re-execs.' \
+    'if [ -n "$YOLOBOX_HOST_UID" ] && [ "$YOLOBOX_HOST_UID" != "$(id -u)" ] && [ "$YOLOBOX_HOST_UID" != "0" ]; then' \
+    '    exec sudo -E /usr/local/bin/yolobox-uid-fix.sh "$YOLOBOX_HOST_UID" "${YOLOBOX_HOST_GID:-$(id -g)}" -- "$0" "$@"' \
+    'fi' \
     '' \
     '# Apple container workaround: files are in /host-files/ instead of separate mounts' \
     '# Check YOLOBOX_HOST_FILES env var for the mount location' \
