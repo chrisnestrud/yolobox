@@ -311,15 +311,15 @@ const guides = [
   border-radius: 16px;
   text-decoration: none;
   color: inherit;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.015));
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, var(--yolo-surface-2), var(--yolo-surface-1));
+  border: 1px solid var(--yolo-card-border);
   transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .guide-card:hover {
   transform: translateY(-2px);
-  border-color: rgba(255, 140, 0, 0.35);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
+  border-color: var(--yolo-accent-border-strong);
+  box-shadow: var(--yolo-card-shadow-hover);
 }
 
 .guide-kicker {
@@ -345,7 +345,7 @@ const guides = [
 
 .danger-code {
   color: #ef4444;
-  background: rgba(239, 68, 68, 0.1);
+  background: var(--yolo-danger-soft);
   padding: 2px 10px;
   border-radius: 6px;
   font-family: var(--vp-font-family-mono);
@@ -354,16 +354,16 @@ const guides = [
 
 /* ── Terminal Blocks ── */
 .term {
-  background: #0c0c0f;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--yolo-terminal-bg);
+  border: 1px solid var(--yolo-terminal-border);
   border-radius: 12px;
   overflow: hidden;
   transition: border-color 0.3s, box-shadow 0.3s;
 }
 
 .term:hover {
-  border-color: rgba(255, 255, 255, 0.12);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  border-color: var(--yolo-terminal-border-strong);
+  box-shadow: var(--yolo-card-shadow);
 }
 
 .term-header {
@@ -371,8 +371,8 @@ const guides = [
   align-items: center;
   gap: 8px;
   padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.02);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--yolo-terminal-header-bg);
+  border-bottom: 1px solid var(--yolo-card-border);
 }
 
 .dot {
@@ -388,7 +388,7 @@ const guides = [
   margin-left: 8px;
   font-family: var(--vp-font-family-mono);
   font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.25);
+  color: var(--yolo-term-faint);
 }
 
 .term-body {
@@ -396,20 +396,20 @@ const guides = [
   font-family: var(--vp-font-family-mono);
   font-size: 0.85rem;
   line-height: 1.75;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--yolo-term-text);
 }
 
 .term-body .prompt { color: var(--yolo-orange); }
-.term-body .comment { color: rgba(255, 255, 255, 0.25); }
-.term-body .output { color: rgba(255, 255, 255, 0.5); }
+.term-body .comment { color: var(--yolo-term-faint); }
+.term-body .output { color: var(--yolo-term-muted); }
 .term-body .danger-text { color: #ef4444; }
 .term-body .safe-text { color: #34d399; }
 
-.term-danger { border-color: rgba(239, 68, 68, 0.15); }
-.term-danger:hover { border-color: rgba(239, 68, 68, 0.3); box-shadow: 0 8px 32px rgba(239, 68, 68, 0.05); }
+.term-danger { border-color: var(--yolo-danger-border); }
+.term-danger:hover { border-color: var(--yolo-danger-border-strong); box-shadow: var(--yolo-danger-shadow); }
 
-.term-safe { border-color: rgba(52, 211, 153, 0.15); }
-.term-safe:hover { border-color: rgba(52, 211, 153, 0.3); box-shadow: 0 8px 32px rgba(52, 211, 153, 0.05); }
+.term-safe { border-color: var(--yolo-safe-border); }
+.term-safe:hover { border-color: var(--yolo-safe-border-strong); box-shadow: var(--yolo-safe-shadow); }
 
 /* ── Quick Start ── */
 .quickstart-section {
@@ -431,10 +431,10 @@ const guides = [
   font-family: var(--vp-font-family-mono);
   font-size: 0.8rem;
   color: var(--vp-c-text-2);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--yolo-inline-code-bg);
   padding: 2px 8px;
   border-radius: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--yolo-inline-code-border);
 }
 
 .quickstart-cta {
@@ -493,15 +493,16 @@ const guides = [
 
 .step-card {
   padding: 32px 28px;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--yolo-surface-1);
+  border: 1px solid var(--yolo-card-border);
   border-radius: 14px;
   transition: border-color 0.3s, transform 0.3s;
 }
 
 .step-card:hover {
-  border-color: rgba(255, 255, 255, 0.12);
+  border-color: var(--yolo-card-border-strong);
   transform: translateY(-3px);
+  box-shadow: var(--yolo-card-shadow);
 }
 
 .step-number {
@@ -531,9 +532,10 @@ const guides = [
   font-family: var(--vp-font-family-mono);
   font-size: 0.8rem;
   color: var(--yolo-amber);
-  background: rgba(255, 140, 0, 0.08);
+  background: var(--yolo-accent-soft);
   padding: 2px 8px;
   border-radius: 4px;
+  border: 1px solid var(--yolo-accent-border);
 }
 
 .solution-grid {
@@ -547,8 +549,8 @@ const guides = [
 .solution-item {
   padding: 16px 18px;
   border-radius: 12px;
-  background: rgba(255, 107, 0, 0.05);
-  border: 1px solid rgba(255, 140, 0, 0.14);
+  background: var(--yolo-accent-soft);
+  border: 1px solid var(--yolo-accent-border);
   color: var(--vp-c-text-1);
   font-weight: 500;
   line-height: 1.5;
@@ -564,15 +566,16 @@ const guides = [
 
 .agent-card {
   padding: 24px;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--yolo-surface-1);
+  border: 1px solid var(--yolo-card-border);
   border-radius: 12px;
   transition: border-color 0.3s, transform 0.3s;
 }
 
 .agent-card:hover {
-  border-color: var(--yolo-orange);
+  border-color: var(--yolo-accent-border-strong);
   transform: translateY(-3px);
+  box-shadow: var(--yolo-card-shadow);
 }
 
 .agent-name {
@@ -587,7 +590,8 @@ const guides = [
   font-family: var(--vp-font-family-mono);
   font-size: 0.8rem;
   color: var(--yolo-orange);
-  background: rgba(255, 107, 0, 0.08);
+  background: var(--yolo-accent-soft);
+  border: 1px solid var(--yolo-accent-border);
   padding: 4px 10px;
   border-radius: 6px;
   display: inline-block;
@@ -604,8 +608,8 @@ const guides = [
 .agent-note {
   margin-top: 32px;
   padding: 20px 24px;
-  background: rgba(255, 107, 0, 0.04);
-  border: 1px solid rgba(255, 107, 0, 0.12);
+  background: var(--yolo-accent-soft);
+  border: 1px solid var(--yolo-accent-border);
   border-radius: 10px;
   color: var(--vp-c-text-2);
   font-size: 0.95rem;
