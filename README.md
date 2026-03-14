@@ -45,122 +45,32 @@ yolobox claude    # Let it rip
 
 Or use any other AI tool: `yolobox codex`, `yolobox gemini`, `yolobox copilot`.
 
-## Runtime Support
+## What's in the Box?
 
-- **macOS**: Docker Desktop, OrbStack, Colima, or [Apple container](https://github.com/apple/container) (macOS Tahoe+)
-- **Linux**: Docker or Podman
+The base image comes batteries-included:
+- **AI CLIs**: Claude Code, Gemini CLI, OpenAI Codex, OpenCode, Copilot (all pre-configured for full-auto mode!)
+- **Runtimes**: Node.js 22, Python 3, Go, Bun
+- **Build tools**: make, cmake, gcc
+- **Git** + **GitHub CLI**
+- **Common utilities**: ripgrep, fd, fzf, jq, vim
 
-yolobox auto-detects available runtimes. To use a specific runtime:
-```bash
-yolobox claude --runtime container   # Apple container
-yolobox claude --runtime docker      # Docker
-yolobox claude --runtime podman      # Podman
-```
+Need something else? The AI has sudo.
 
-> **Memory:** Claude Code needs **4GB+ RAM** allocated to Docker. Colima defaults to 2GB which will cause OOM kills. Increase with: `colima stop && colima start --memory 8`
+### AI CLIs Run in YOLO Mode
 
-## Commands
+Inside yolobox, the AI CLIs are aliased to skip all permission prompts:
 
-```bash
-# AI tool shortcuts (recommended)
-yolobox claude              # Run Claude Code
-yolobox codex               # Run OpenAI Codex
-yolobox gemini              # Run Gemini CLI
-yolobox opencode            # Run OpenCode
-yolobox copilot             # Run GitHub Copilot
+| Command | Expands to |
+|---------|------------|
+| `claude` | `claude --dangerously-skip-permissions` |
+| `codex` | `codex --dangerously-bypass-approvals-and-sandbox` |
+| `gemini` | `gemini --yolo` |
+| `opencode` | `opencode` (no yolo flag available yet) |
+| `copilot` | `copilot --yolo` |
 
-# General commands
-yolobox                     # Drop into interactive shell (for manual use)
-yolobox run <cmd...>        # Run any command in sandbox
-yolobox setup               # Configure yolobox settings
-yolobox upgrade             # Update binary and pull latest image
-yolobox config              # Show resolved configuration
-yolobox reset --force       # Delete volumes (fresh start)
-yolobox version             # Show version
-yolobox help                # Show help
-```
+No confirmations, no guardrails—just pure unfiltered AI, the way nature intended.
 
-## Flags
-
-> **Note:** Flags go **after** the subcommand: `yolobox run --flag cmd` or `yolobox claude --flag`, not `yolobox --flag run cmd`.
-
-| Flag | Description |
-|------|-------------|
-| `--runtime <name>` | Use `docker`, `podman`, or `container` (Apple) |
-| `--image <name>` | Custom base image |
-| `--mount <src:dst>` | Extra mount (repeatable) |
-| `--env <KEY=val>` | Set environment variable (repeatable) |
-| `--setup` | Run interactive setup before starting |
-| `--ssh-agent` | Forward SSH agent socket |
-| `--no-network` | Disable network access |
-| `--network <name>` | Join specific network (e.g., docker compose) |
-| `--pod <name>` | Join existing Podman pod (shares its network) |
-| `--no-yolo` | Disable auto-confirmations (mindful mode) |
-| `--scratch` | Start with a fresh home/cache (nothing persists) |
-| `--readonly-project` | Mount project read-only (outputs go to `/output`) |
-| `--claude-config` | Copy host `~/.claude` config into container |
-| `--gemini-config` | Copy host `~/.gemini` config into container |
-| `--git-config` | Copy host `~/.gitconfig` into container |
-| `--gh-token` | Forward GitHub CLI token (extracts from keychain via `gh auth token`) |
-| `--copy-agent-instructions` | Copy global agent instruction files (see below) |
-| `--docker` | Mount Docker socket and join shared network (see below) |
-| `--cpus <num>` | Limit CPUs available to the container (accepts fractions like `3.5`) |
-| `--memory <limit>` | Hard memory limit (e.g., `8g`, `1024m`) |
-| `--shm-size <size>` | Size of `/dev/shm` tmpfs (useful for browsers/playwright) |
-| `--gpus <spec>` | Pass GPUs (Docker/Podman notation, e.g., `all`, `device=0`) |
-| `--device <src:dest>` | Add host devices in the container (repeatable) |
-| `--cap-add <cap>` | Add Linux capabilities (repeatable) |
-| `--cap-drop <cap>` | Drop Linux capabilities (repeatable) |
-| `--runtime-arg <flag>` | Pass raw runtime flags directly to Docker/Podman (repeatable) |
-| `--packages <list>` | Comma-separated apt packages for a derived custom image |
-| `--customize-file <path>` | Dockerfile fragment for a derived custom image |
-| `--rebuild-image` | Force rebuild of the derived custom image |
-
-> **Resource & security controls:** The table lists the common knobs baked into yolobox. Anything else (e.g., `--ulimit nofile=4096:8192`, `--security-opt seccomp=unconfined`) can be forwarded verbatim with `--runtime-arg <flag>` as many times as needed. Docker and Podman accept the passthrough flags unchanged; Apple's `container` runtime ignores options it doesn't understand.
-
-> **SSH agent (macOS):** On macOS, `--ssh-agent` requires the Docker VM to forward the SSH agent. For **Colima**: edit `~/.colima/default/colima.yaml`, set `forwardAgent: true`, then restart (`colima stop && colima start`). **Docker Desktop** forwards the agent automatically.
-
-> **Networking:** By default, yolobox uses Docker's bridge network (internet access, no container DNS). Use `--network <name>` to join a docker compose network and access services by name. Use `--no-network` for complete isolation.
-
-> **Docker access:** The `--docker` flag mounts the host Docker socket into the container and joins a shared `yolobox-net` network. This lets the AI agent run Docker commands (build images, start containers, use docker compose) that create sibling containers on the same network. The agent and any services it creates can communicate by container name. The network name is available inside the container as `$YOLOBOX_NETWORK`. Cannot be used with `--no-network`.
-
-## Configuration
-
-Run `yolobox setup` to configure your preferences with an interactive wizard.
-
-Settings are saved to `~/.config/yolobox/config.toml`:
-
-```toml
-git_config = true
-gh_token = true
-ssh_agent = true
-docker = true
-no_network = true
-network = "my_compose_network"
-no_yolo = true
-cpus = "4"
-memory = "8g"
-cap_add = ["SYS_PTRACE"]
-devices = ["/dev/kvm:/dev/kvm"]
-runtime_args = ["--security-opt", "seccomp=unconfined"]
-```
-
-You can also create `.yolobox.toml` in your project for project-specific settings:
-
-```toml
-mounts = ["../shared-libs:/libs:ro"]
-env = ["DEBUG=1"]
-no_network = true
-shm_size = "2g"
-```
-
-Priority: CLI flags > project config > global config > defaults.
-
-Each `runtime_args` entry is a single CLI argument. For flags that take a value, add them as separate entries so `--security-opt seccomp=unconfined` becomes `["--security-opt", "seccomp=unconfined"]`.
-
-> **Note:** Setting `claude_config = true` or `gemini_config = true` in your config will copy your host config on **every** container start, overwriting any changes made inside the container (including auth and history). Prefer using `--claude-config` or `--gemini-config` for one-time syncs.
-
-### Project-Level Container Customization
+## Project-Level Container Customization
 
 Need extra tools for one project without bloating the base image? yolobox can build and cache a derived image from your project config.
 
@@ -215,6 +125,77 @@ You still pay one rebuild after a base-image upgrade, but you do not need to man
 
 > **Note:** Derived-image customization requires a runtime that can build images (`docker` or `podman`). Apple's `container` runtime can run yolobox, but it cannot build custom images.
 
+## Runtime Support
+
+- **macOS**: Docker Desktop, OrbStack, Colima, or [Apple container](https://github.com/apple/container) (macOS Tahoe+)
+- **Linux**: Docker or Podman
+
+yolobox auto-detects available runtimes. To use a specific runtime:
+```bash
+yolobox claude --runtime container   # Apple container
+yolobox claude --runtime docker      # Docker
+yolobox claude --runtime podman      # Podman
+```
+
+> **Memory:** Claude Code needs **4GB+ RAM** allocated to Docker. Colima defaults to 2GB which will cause OOM kills. Increase with: `colima stop && colima start --memory 8`
+
+## Commands
+
+```bash
+# AI tool shortcuts (recommended)
+yolobox claude              # Run Claude Code
+yolobox codex               # Run OpenAI Codex
+yolobox gemini              # Run Gemini CLI
+yolobox opencode            # Run OpenCode
+yolobox copilot             # Run GitHub Copilot
+
+# General commands
+yolobox                     # Drop into interactive shell (for manual use)
+yolobox run <cmd...>        # Run any command in sandbox
+yolobox setup               # Configure yolobox settings
+yolobox upgrade             # Update binary and pull latest image
+yolobox config              # Show resolved configuration
+yolobox reset --force       # Delete volumes (fresh start)
+yolobox version             # Show version
+yolobox help                # Show help
+```
+
+## Configuration
+
+Run `yolobox setup` to configure your preferences with an interactive wizard.
+
+Settings are saved to `~/.config/yolobox/config.toml`:
+
+```toml
+git_config = true
+gh_token = true
+ssh_agent = true
+docker = true
+no_network = true
+network = "my_compose_network"
+no_yolo = true
+cpus = "4"
+memory = "8g"
+cap_add = ["SYS_PTRACE"]
+devices = ["/dev/kvm:/dev/kvm"]
+runtime_args = ["--security-opt", "seccomp=unconfined"]
+```
+
+You can also create `.yolobox.toml` in your project for project-specific settings:
+
+```toml
+mounts = ["../shared-libs:/libs:ro"]
+env = ["DEBUG=1"]
+no_network = true
+shm_size = "2g"
+```
+
+Priority: CLI flags > project config > global config > defaults.
+
+Each `runtime_args` entry is a single CLI argument. For flags that take a value, add them as separate entries so `--security-opt seccomp=unconfined` becomes `["--security-opt", "seccomp=unconfined"]`.
+
+> **Note:** Setting `claude_config = true` or `gemini_config = true` in your config will copy your host config on **every** container start, overwriting any changes made inside the container (including auth and history). Prefer using `--claude-config` or `--gemini-config` for one-time syncs.
+
 ### Copying Global Agent Instructions
 
 The `--copy-agent-instructions` flag copies your **global/user-level** agent instruction files into the container. This is useful when you have custom rules or preferences defined globally that you want available inside yolobox.
@@ -243,30 +224,49 @@ These are automatically passed into the container if set:
 
 > **Note:** On macOS, `gh` CLI stores tokens in Keychain, not environment variables. Use `--gh-token` (or `gh_token = true` in config) to extract and forward your GitHub CLI token.
 
-## What's in the Box?
+## Flags
 
-The base image comes batteries-included:
-- **AI CLIs**: Claude Code, Gemini CLI, OpenAI Codex, OpenCode, Copilot (all pre-configured for full-auto mode!)
-- **Runtimes**: Node.js 22, Python 3, Go, Bun
-- **Build tools**: make, cmake, gcc
-- **Git** + **GitHub CLI**
-- **Common utilities**: ripgrep, fd, fzf, jq, vim
+> **Note:** Flags go **after** the subcommand: `yolobox run --flag cmd` or `yolobox claude --flag`, not `yolobox --flag run cmd`.
 
-Need something else? The AI has sudo.
+| Flag | Description |
+|------|-------------|
+| `--runtime <name>` | Use `docker`, `podman`, or `container` (Apple) |
+| `--image <name>` | Custom base image |
+| `--mount <src:dst>` | Extra mount (repeatable) |
+| `--env <KEY=val>` | Set environment variable (repeatable) |
+| `--setup` | Run interactive setup before starting |
+| `--ssh-agent` | Forward SSH agent socket |
+| `--no-network` | Disable network access |
+| `--network <name>` | Join specific network (e.g., docker compose) |
+| `--pod <name>` | Join existing Podman pod (shares its network) |
+| `--no-yolo` | Disable auto-confirmations (mindful mode) |
+| `--scratch` | Start with a fresh home/cache (nothing persists) |
+| `--readonly-project` | Mount project read-only (outputs go to `/output`) |
+| `--claude-config` | Copy host `~/.claude` config into container |
+| `--gemini-config` | Copy host `~/.gemini` config into container |
+| `--git-config` | Copy host `~/.gitconfig` into container |
+| `--gh-token` | Forward GitHub CLI token (extracts from keychain via `gh auth token`) |
+| `--copy-agent-instructions` | Copy global agent instruction files (see configuration below) |
+| `--docker` | Mount Docker socket and join shared network (see notes below) |
+| `--cpus <num>` | Limit CPUs available to the container (accepts fractions like `3.5`) |
+| `--memory <limit>` | Hard memory limit (e.g., `8g`, `1024m`) |
+| `--shm-size <size>` | Size of `/dev/shm` tmpfs (useful for browsers/playwright) |
+| `--gpus <spec>` | Pass GPUs (Docker/Podman notation, e.g., `all`, `device=0`) |
+| `--device <src:dest>` | Add host devices in the container (repeatable) |
+| `--cap-add <cap>` | Add Linux capabilities (repeatable) |
+| `--cap-drop <cap>` | Drop Linux capabilities (repeatable) |
+| `--runtime-arg <flag>` | Pass raw runtime flags directly to Docker/Podman (repeatable) |
+| `--packages <list>` | Comma-separated apt packages for a derived custom image |
+| `--customize-file <path>` | Dockerfile fragment for a derived custom image |
+| `--rebuild-image` | Force rebuild of the derived custom image |
 
-### AI CLIs Run in YOLO Mode
+> **Resource & security controls:** The table lists the common knobs baked into yolobox. Anything else (e.g., `--ulimit nofile=4096:8192`, `--security-opt seccomp=unconfined`) can be forwarded verbatim with `--runtime-arg <flag>` as many times as needed. Docker and Podman accept the passthrough flags unchanged; Apple's `container` runtime ignores options it doesn't understand.
 
-Inside yolobox, the AI CLIs are aliased to skip all permission prompts:
+> **SSH agent (macOS):** On macOS, `--ssh-agent` requires the Docker VM to forward the SSH agent. For **Colima**: edit `~/.colima/default/colima.yaml`, set `forwardAgent: true`, then restart (`colima stop && colima start`). **Docker Desktop** forwards the agent automatically.
 
-| Command | Expands to |
-|---------|------------|
-| `claude` | `claude --dangerously-skip-permissions` |
-| `codex` | `codex --dangerously-bypass-approvals-and-sandbox` |
-| `gemini` | `gemini --yolo` |
-| `opencode` | `opencode` (no yolo flag available yet) |
-| `copilot` | `copilot --yolo` |
+> **Networking:** By default, yolobox uses Docker's bridge network (internet access, no container DNS). Use `--network <name>` to join a docker compose network and access services by name. Use `--no-network` for complete isolation.
 
-No confirmations, no guardrails—just pure unfiltered AI, the way nature intended.
+> **Docker access:** The `--docker` flag mounts the host Docker socket into the container and joins a shared `yolobox-net` network. This lets the AI agent run Docker commands (build images, start containers, use docker compose) that create sibling containers on the same network. The agent and any services it creates can communicate by container name. The network name is available inside the container as `$YOLOBOX_NETWORK`. Cannot be used with `--no-network`.
 
 ## Philosophy: It's the AI's Box, Not Yours
 
