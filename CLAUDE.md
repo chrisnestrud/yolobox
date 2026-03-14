@@ -40,7 +40,9 @@ Do NOT:
 - Push a fix for a bug without reproducing the original failure first and confirming it's gone
 
 **When adding new flags or config options:**
-1. Add the flag to `cmd/yolobox/main.go` (Config struct, parseBaseFlags, mergeConfig, buildRunArgs, printConfig, saveGlobalConfig, runSetup)
+1. Add the flag/config handling to `cmd/yolobox/main.go`:
+   - Always consider `Config`, `parseBaseFlags`, `mergeConfig`, `printConfig`, and any runtime path that consumes the option
+   - Update `saveGlobalConfig` and `runSetup` if the option should be persisted/configured globally
 2. Update `README.md`:
    - Add to the Flags table
    - Add to the example config.toml if it's a persistent option
@@ -99,26 +101,38 @@ make image
 ./yolobox run --env FOO=bar bash -c 'echo $FOO'           # Should output: bar
 ./yolobox run --no-network curl https://google.com        # Should fail
 ./yolobox run --readonly-project touch testfile           # Should fail (project is read-only)
+./yolobox run --packages cowsay cowsay hello              # Should build custom image and run cowsay
 
-# 8. API key passthrough
+# 8. Project-level customization
+YB="$(pwd)/yolobox"
+mkdir -p /tmp/yolobox-customize-test && cd /tmp/yolobox-customize-test
+printf '[customize]\npackages = ["cowsay"]\n' > .yolobox.toml
+$YB run cowsay hello                                      # First run builds derived image
+$YB run cowsay cached                                     # Second run should reuse it
+printf 'USER root\nRUN apt-get update && apt-get install -y cowsay\nUSER yolo\n' > .yolobox.Dockerfile
+printf '[customize]\ndockerfile = ".yolobox.Dockerfile"\n' > .yolobox.toml
+$YB run /usr/games/cowsay hello                           # Fragment-based customization
+cd - && rm -rf /tmp/yolobox-customize-test
+
+# 9. API key passthrough
 ANTHROPIC_API_KEY=test ./yolobox run printenv ANTHROPIC_API_KEY  # Should output: test
 
-# 9. Claude config sharing (opt-in with --claude-config)
+# 10. Claude config sharing (opt-in with --claude-config)
 ./yolobox run --claude-config ls /home/yolo/.claude   # Should show copied host claude config
 
-# 10. Gemini config sharing (opt-in with --gemini-config)
+# 11. Gemini config sharing (opt-in with --gemini-config)
 ./yolobox run --gemini-config ls /home/yolo/.gemini   # Should show copied host gemini config
 
-# 11. Git config sharing (opt-in with --git-config)
+# 12. Git config sharing (opt-in with --git-config)
 ./yolobox run --git-config cat /home/yolo/.gitconfig  # Should show copied host git config
 
-# 12. Docker socket forwarding (opt-in with --docker)
+# 13. Docker socket forwarding (opt-in with --docker)
 ./yolobox run --docker docker version                         # Should show Docker version
 ./yolobox run --docker docker compose version                 # Should show Compose version
 ./yolobox run --docker bash -c 'echo $YOLOBOX_NETWORK'       # Should output: yolobox-net
 ./yolobox run --docker --no-network echo hi                   # Should error (conflict)
 
-# 13. Global agent instructions (opt-in with --copy-agent-instructions)
+# 14. Global agent instructions (opt-in with --copy-agent-instructions)
 # Creates test file, copies it, then cleans up
 mkdir -p ~/.claude && echo "test" > ~/.claude/CLAUDE.md
 ./yolobox run --copy-agent-instructions cat /home/yolo/.claude/CLAUDE.md  # Should output: test
@@ -131,20 +145,22 @@ yolobox is a single-binary Go CLI that runs AI coding agents (Claude Code, Codex
 
 ### Code Structure
 
-All code lives in `cmd/yolobox/main.go` (~700 lines):
+All code lives in `cmd/yolobox/main.go` (~2600 lines):
 
-- **Config struct** - TOML config with runtime, image, mounts, secrets, env, resource limits, network/readonly flags
+- **Config struct** - TOML config with runtime, image, mounts, env, customization, resource limits, and sharing flags
 - **loadConfig()** - Merges global (`~/.config/yolobox/config.toml`) + project (`.yolobox.toml`) + CLI flags
 - **buildRunArgs()** - Constructs docker/podman run arguments
+- **prepareCustomImage()** - Builds or reuses derived images for project-level customization
 - **resolveRuntime()** - Auto-detects docker or podman
 - **Color helpers** - `success()`, `info()`, `warn()`, `errorf()` for colorful output
 
 ### Key Design Decisions
 
 - Single file keeps it auditable and simple
-- Named volumes (`yolobox-home`, `yolobox-cache`, `yolobox-tools`) persist across runs
+- Named volumes (`yolobox-home`, `yolobox-cache`, and `yolobox-output` when needed) persist across runs
 - Auto-passthrough of common API keys (ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.)
 - Container user is `yolo` with passwordless sudo
+- Project-level customization builds derived images from `customize.packages` and/or `customize.dockerfile`
 - Flags are parsed per-subcommand (e.g., `yolobox run --env FOO=bar cmd`, not `yolobox --env FOO=bar run cmd`)
 
 ### Container Behavior

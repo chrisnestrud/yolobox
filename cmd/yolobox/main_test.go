@@ -49,6 +49,25 @@ func TestMergeConfig(t *testing.T) {
 	}
 }
 
+func TestMergeConfigCustomize(t *testing.T) {
+	dst := Config{}
+	src := Config{
+		Customize: CustomizeConfig{
+			Packages:   []string{"maven", "default-jdk"},
+			Dockerfile: ".yolobox.Dockerfile",
+		},
+	}
+
+	mergeConfig(&dst, src)
+
+	if len(dst.Customize.Packages) != 2 {
+		t.Fatalf("expected 2 customize packages, got %v", dst.Customize.Packages)
+	}
+	if dst.Customize.Dockerfile != ".yolobox.Dockerfile" {
+		t.Fatalf("expected customize dockerfile to merge, got %q", dst.Customize.Dockerfile)
+	}
+}
+
 func TestResolvePath(t *testing.T) {
 	home, _ := os.UserHomeDir()
 	projectDir := "/project"
@@ -391,6 +410,110 @@ func TestParseFlagsScratch(t *testing.T) {
 	}
 	if len(rest) != 2 || rest[0] != "echo" || rest[1] != "hello" {
 		t.Errorf("expected remaining args [echo hello], got %v", rest)
+	}
+}
+
+func TestParseFlagsCustomize(t *testing.T) {
+	projectDir := t.TempDir()
+	cfg, rest, err := parseBaseFlags("run", []string{
+		"--packages", "default-jdk, maven",
+		"--customize-file", ".yolobox.Dockerfile",
+		"--rebuild-image",
+		"java", "--version",
+	}, projectDir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(cfg.Customize.Packages) != 2 || cfg.Customize.Packages[0] != "default-jdk" || cfg.Customize.Packages[1] != "maven" {
+		t.Fatalf("unexpected customize packages: %v", cfg.Customize.Packages)
+	}
+	if cfg.Customize.Dockerfile != ".yolobox.Dockerfile" {
+		t.Fatalf("unexpected customize dockerfile: %q", cfg.Customize.Dockerfile)
+	}
+	if !cfg.RebuildImage {
+		t.Fatal("expected RebuildImage to be true")
+	}
+	if len(rest) != 2 || rest[0] != "java" || rest[1] != "--version" {
+		t.Fatalf("unexpected remaining args: %v", rest)
+	}
+}
+
+func TestParseFlagsCustomizeInvalidPackage(t *testing.T) {
+	_, _, err := parseBaseFlags("run", []string{"--packages", "default-jdk,$(evil)", "java"}, t.TempDir())
+	if err == nil {
+		t.Fatal("expected invalid package name error")
+	}
+}
+
+func TestHasCustomization(t *testing.T) {
+	if hasCustomization(Config{}) {
+		t.Fatal("expected empty config to have no customization")
+	}
+	if !hasCustomization(Config{Customize: CustomizeConfig{Packages: []string{"default-jdk"}}}) {
+		t.Fatal("expected packages customization to be detected")
+	}
+	if !hasCustomization(Config{Customize: CustomizeConfig{Dockerfile: ".yolobox.Dockerfile"}}) {
+		t.Fatal("expected dockerfile customization to be detected")
+	}
+}
+
+func TestGenerateCustomDockerfile(t *testing.T) {
+	dockerfile, err := generateCustomDockerfile("ghcr.io/finbarr/yolobox:latest", []string{"maven", "default-jdk", "maven"}, "USER root\nRUN echo hi\nUSER yolo\n")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(dockerfile, "FROM ghcr.io/finbarr/yolobox:latest") {
+		t.Fatalf("expected base image in generated Dockerfile:\n%s", dockerfile)
+	}
+	if !strings.Contains(dockerfile, "apt-get install -y --no-install-recommends default-jdk maven") {
+		t.Fatalf("expected sorted package install in generated Dockerfile:\n%s", dockerfile)
+	}
+	if !strings.Contains(dockerfile, "RUN echo hi") {
+		t.Fatalf("expected fragment content in generated Dockerfile:\n%s", dockerfile)
+	}
+}
+
+func TestGenerateCustomDockerfileRejectsInvalidPackage(t *testing.T) {
+	_, err := generateCustomDockerfile("base", []string{"$(evil)"}, "")
+	if err == nil {
+		t.Fatal("expected invalid package to be rejected")
+	}
+}
+
+func TestCustomImageTagStable(t *testing.T) {
+	tagA := customImageTag("sha256:base", "FROM base\n", []string{"maven", "default-jdk"})
+	tagB := customImageTag("sha256:base", "FROM base\n", []string{"default-jdk", "maven", "maven"})
+	if tagA != tagB {
+		t.Fatalf("expected normalized package order to yield same tag, got %q vs %q", tagA, tagB)
+	}
+}
+
+func TestResolveCustomizeFile(t *testing.T) {
+	projectDir := t.TempDir()
+	got, err := resolveCustomizeFile(".yolobox.Dockerfile", projectDir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != filepath.Join(projectDir, ".yolobox.Dockerfile") {
+		t.Fatalf("unexpected resolved customize file: %q", got)
+	}
+}
+
+func TestLoadCustomizeFragment(t *testing.T) {
+	projectDir := t.TempDir()
+	path := filepath.Join(projectDir, ".yolobox.Dockerfile")
+	if err := os.WriteFile(path, []byte("USER root\nRUN echo hi\n"), 0644); err != nil {
+		t.Fatalf("failed to write test customize file: %v", err)
+	}
+
+	got, err := loadCustomizeFragment(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "USER root\nRUN echo hi" {
+		t.Fatalf("unexpected customize fragment contents: %q", got)
 	}
 }
 
@@ -770,6 +893,12 @@ func TestSplitToolArgs(t *testing.T) {
 			args:        []string{"--no-network", "--scratch", "--resume", "abc123"},
 			wantYolobox: []string{"--no-network", "--scratch"},
 			wantTool:    []string{"--resume", "abc123"},
+		},
+		{
+			name:        "customization flags stay with yolobox",
+			args:        []string{"--packages", "default-jdk,maven", "--rebuild-image", "--resume"},
+			wantYolobox: []string{"--packages", "default-jdk,maven", "--rebuild-image"},
+			wantTool:    []string{"--resume"},
 		},
 		{
 			name:        "explicit separator",

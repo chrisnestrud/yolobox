@@ -112,6 +112,9 @@ yolobox help                # Show help
 | `--cap-add <cap>` | Add Linux capabilities (repeatable) |
 | `--cap-drop <cap>` | Drop Linux capabilities (repeatable) |
 | `--runtime-arg <flag>` | Pass raw runtime flags directly to Docker/Podman (repeatable) |
+| `--packages <list>` | Comma-separated apt packages for a derived custom image |
+| `--customize-file <path>` | Dockerfile fragment for a derived custom image |
+| `--rebuild-image` | Force rebuild of the derived custom image |
 
 > **Resource & security controls:** The table lists the common knobs baked into yolobox. Anything else (e.g., `--ulimit nofile=4096:8192`, `--security-opt seccomp=unconfined`) can be forwarded verbatim with `--runtime-arg <flag>` as many times as needed. Docker and Podman accept the passthrough flags unchanged; Apple's `container` runtime ignores options it doesn't understand.
 
@@ -156,6 +159,61 @@ Priority: CLI flags > project config > global config > defaults.
 Each `runtime_args` entry is a single CLI argument. For flags that take a value, add them as separate entries so `--security-opt seccomp=unconfined` becomes `["--security-opt", "seccomp=unconfined"]`.
 
 > **Note:** Setting `claude_config = true` or `gemini_config = true` in your config will copy your host config on **every** container start, overwriting any changes made inside the container (including auth and history). Prefer using `--claude-config` or `--gemini-config` for one-time syncs.
+
+### Project-Level Container Customization
+
+Need extra tools for one project without bloating the base image? yolobox can build and cache a derived image from your project config.
+
+Simple case:
+
+```toml
+# .yolobox.toml
+[customize]
+packages = ["default-jdk", "maven"]
+```
+
+Then run normally:
+
+```bash
+yolobox run mvn --version
+```
+
+For more advanced setups, add a Dockerfile fragment:
+
+```toml
+# .yolobox.toml
+[customize]
+dockerfile = ".yolobox.Dockerfile"
+```
+
+```dockerfile
+# .yolobox.Dockerfile
+USER root
+RUN curl -fsSL https://get.sdkman.io | bash
+USER yolo
+```
+
+You can combine both. `packages` install first, then the fragment runs on top.
+
+For one-offs, use flags:
+
+```bash
+yolobox run --packages default-jdk,maven mvn --version
+yolobox run --customize-file .yolobox.Dockerfile bash
+yolobox run --packages default-jdk --rebuild-image java --version
+```
+
+The first run builds a derived image. Later runs reuse it until the base image or customization inputs change. When you use a Dockerfile fragment, yolobox asks Docker/Podman to build again so context changes are noticed, but cached layers are reused when nothing changed.
+
+This also keeps `yolobox upgrade` relatively painless:
+
+- `yolobox upgrade` still updates the binary and pulls the latest base image
+- your project-level customization stays in `.yolobox.toml` / `.yolobox.Dockerfile`
+- the next run rebuilds the derived image only if the new base image or your customization inputs changed
+
+You still pay one rebuild after a base-image upgrade, but you do not need to manually rebase a forked Dockerfile just to keep using the feature.
+
+> **Note:** Derived-image customization requires a runtime that can build images (`docker` or `podman`). Apple's `container` runtime can run yolobox, but it cannot build custom images.
 
 ### Copying Global Agent Instructions
 
@@ -311,7 +369,7 @@ This builds `ghcr.io/finbarr/yolobox:latest` locally, overriding the remote imag
 
 ## Customizing the Image
 
-Want to pre-install additional packages or tools? Create your own image:
+Need more control than `packages` or a small Dockerfile fragment? You can still build and use a fully custom image:
 
 **1. Clone and modify:**
 ```bash
@@ -331,7 +389,16 @@ mkdir -p ~/.config/yolobox
 echo 'image = "my-yolobox:latest"' > ~/.config/yolobox/config.toml
 ```
 
-Using a custom image name means `yolobox upgrade` won't overwrite your customization. When you update your Dockerfile, just rebuild with the same command.
+Using a custom image name means `yolobox upgrade` won't overwrite your customization. That is the upside.
+
+The downside is that you now own the drift:
+
+- upstream Dockerfile changes do not automatically flow into your custom image
+- `yolobox upgrade` will update the binary, but it will not rebuild or migrate your custom image for you
+- when the base image changes upstream, you need to pull those changes into your fork and rebuild manually
+- the farther your custom Dockerfile drifts, the more upgrade work you take on
+
+If you mostly need "add a few tools for this project", prefer project-level customization above. Use a fully custom image only when you need full control over the entire base image.
 
 ## Development
 
