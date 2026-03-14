@@ -68,6 +68,49 @@ func TestMergeConfigCustomize(t *testing.T) {
 	}
 }
 
+func TestLoadSetupDefaultsIgnoresProjectConfig(t *testing.T) {
+	projectDir := t.TempDir()
+	configHome := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", configHome)
+	t.Setenv("HOME", t.TempDir())
+
+	globalConfigDir := filepath.Join(configHome, "yolobox")
+	if err := os.MkdirAll(globalConfigDir, 0755); err != nil {
+		t.Fatalf("failed to create global config dir: %v", err)
+	}
+	globalConfigPath := filepath.Join(globalConfigDir, "config.toml")
+	if err := os.WriteFile(globalConfigPath, []byte("docker = true\nmemory = \"4g\"\n"), 0644); err != nil {
+		t.Fatalf("failed to write global config: %v", err)
+	}
+
+	projectConfigPath := filepath.Join(projectDir, ".yolobox.toml")
+	projectConfig := "no_network = true\npod = \"dev-pod\"\n[customize]\npackages = [\"cowsay\"]\n"
+	if err := os.WriteFile(projectConfigPath, []byte(projectConfig), 0644); err != nil {
+		t.Fatalf("failed to write project config: %v", err)
+	}
+
+	cfg, err := loadSetupDefaults()
+	if err != nil {
+		t.Fatalf("loadSetupDefaults failed: %v", err)
+	}
+
+	if !cfg.Docker {
+		t.Fatal("expected global docker setting to be loaded")
+	}
+	if cfg.Memory != "4g" {
+		t.Fatalf("expected global memory setting, got %q", cfg.Memory)
+	}
+	if cfg.NoNetwork {
+		t.Fatal("did not expect project no_network to affect setup defaults")
+	}
+	if cfg.Pod != "" {
+		t.Fatalf("did not expect project pod to affect setup defaults, got %q", cfg.Pod)
+	}
+	if len(cfg.Customize.Packages) != 0 {
+		t.Fatalf("did not expect project customize packages in setup defaults, got %v", cfg.Customize.Packages)
+	}
+}
+
 func TestResolvePath(t *testing.T) {
 	home, _ := os.UserHomeDir()
 	projectDir := "/project"

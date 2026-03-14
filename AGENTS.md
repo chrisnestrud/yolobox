@@ -85,3 +85,4 @@ Also update [README.md](README.md) when user-facing behavior changes.
 - Global npm installs as `yolo` need a user-writable prefix such as `/home/yolo/.npm-global`.
 - If a Docker build gets SIGKILL while equivalent runtime commands succeed, split heavy installers into a separate stage to reduce layer memory pressure.
 - Never `chmod` bind-mounted host sockets from inside the container. Fix access by matching the socket's group inside the container instead of mutating host permissions.
+- Setup defaults must come from global config only. Never seed a global-writing flow from merged project config, or repo-local settings will leak into every future run.

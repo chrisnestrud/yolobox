@@ -707,6 +707,20 @@ func loadConfig(projectDir string) (Config, error) {
 	return cfg, nil
 }
 
+func loadSetupDefaults() (Config, error) {
+	cfg := defaultConfig()
+
+	globalPath, err := globalConfigPath()
+	if err != nil {
+		return Config{}, err
+	}
+	if err := mergeConfigFile(globalPath, &cfg); err != nil {
+		return Config{}, err
+	}
+
+	return cfg, nil
+}
+
 func globalConfigPath() (string, error) {
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
 		return filepath.Join(xdg, "yolobox", "config.toml"), nil
@@ -973,16 +987,6 @@ func configValueOrNotSet(value string) string {
 	return value
 }
 
-// globalConfigExists checks if the global config file exists
-func globalConfigExists() bool {
-	path, err := globalConfigPath()
-	if err != nil {
-		return false
-	}
-	_, err = os.Stat(path)
-	return err == nil
-}
-
 // saveGlobalConfig writes config to the global config file
 func saveGlobalConfig(cfg Config) error {
 	path, err := globalConfigPath()
@@ -1128,15 +1132,9 @@ func yoloboxTheme() *huh.Theme {
 
 // runSetup runs the interactive setup wizard
 func runSetup() (Config, error) {
-	cfg := Config{}
-
-	// Load existing config as defaults
-	if globalConfigExists() {
-		projectDir, _ := os.Getwd()
-		existing, err := loadConfig(projectDir)
-		if err == nil {
-			cfg = existing
-		}
+	cfg, err := loadSetupDefaults()
+	if err != nil {
+		return Config{}, err
 	}
 
 	// Form fields
@@ -1253,7 +1251,7 @@ func runSetup() (Config, error) {
 		),
 	).WithTheme(yoloboxTheme())
 
-	err := form.Run()
+	err = form.Run()
 	if err != nil {
 		if errors.Is(err, huh.ErrUserAborted) {
 			return Config{}, fmt.Errorf("setup cancelled")
