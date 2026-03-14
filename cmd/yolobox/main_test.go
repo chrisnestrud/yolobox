@@ -520,8 +520,12 @@ func TestLoadCustomizeFragment(t *testing.T) {
 func TestStringSliceFlag(t *testing.T) {
 	var s stringSliceFlag
 
-	s.Set("first")
-	s.Set("second")
+	if err := s.Set("first"); err != nil {
+		t.Fatalf("Set(first) failed: %v", err)
+	}
+	if err := s.Set("second"); err != nil {
+		t.Fatalf("Set(second) failed: %v", err)
+	}
 
 	if len(s) != 2 {
 		t.Errorf("expected 2 values, got %d", len(s))
@@ -1088,9 +1092,15 @@ func TestConcurrentPreprocessClaudeConfig(t *testing.T) {
 func TestDirContainsSymlinks(t *testing.T) {
 	// Directory with no symlinks
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "file.txt"), []byte("hello"), 0644)
-	os.MkdirAll(filepath.Join(dir, "subdir"), 0755)
-	os.WriteFile(filepath.Join(dir, "subdir", "nested.txt"), []byte("world"), 0644)
+	if err := os.WriteFile(filepath.Join(dir, "file.txt"), []byte("hello"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "subdir"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "subdir", "nested.txt"), []byte("world"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	if dirContainsSymlinks(dir) {
 		t.Error("expected no symlinks in plain directory")
@@ -1110,11 +1120,17 @@ func TestDirContainsSymlinks(t *testing.T) {
 func TestDirContainsSymlinksNested(t *testing.T) {
 	dir := t.TempDir()
 	sub := filepath.Join(dir, "sub")
-	os.MkdirAll(sub, 0755)
+	if err := os.MkdirAll(sub, 0755); err != nil {
+		t.Fatal(err)
+	}
 	target := filepath.Join(sub, "real.txt")
-	os.WriteFile(target, []byte("data"), 0644)
+	if err := os.WriteFile(target, []byte("data"), 0644); err != nil {
+		t.Fatal(err)
+	}
 	link := filepath.Join(sub, "link.txt")
-	os.Symlink(target, link)
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
 
 	if !dirContainsSymlinks(dir) {
 		t.Error("expected nested symlink to be detected")
@@ -1124,20 +1140,32 @@ func TestDirContainsSymlinksNested(t *testing.T) {
 func TestCopyDirDereferenced(t *testing.T) {
 	// Create source directory with a symlink
 	src := t.TempDir()
-	os.WriteFile(filepath.Join(src, "regular.txt"), []byte("regular"), 0644)
+	if err := os.WriteFile(filepath.Join(src, "regular.txt"), []byte("regular"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	// Create an external file to symlink to
 	external := t.TempDir()
-	os.WriteFile(filepath.Join(external, "external.txt"), []byte("external-content"), 0644)
+	if err := os.WriteFile(filepath.Join(external, "external.txt"), []byte("external-content"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	// Symlink from inside src to external file
-	os.Symlink(filepath.Join(external, "external.txt"), filepath.Join(src, "linked.txt"))
+	if err := os.Symlink(filepath.Join(external, "external.txt"), filepath.Join(src, "linked.txt")); err != nil {
+		t.Fatal(err)
+	}
 
 	// Symlink to an external directory
 	extDir := filepath.Join(external, "subdir")
-	os.MkdirAll(extDir, 0755)
-	os.WriteFile(filepath.Join(extDir, "deep.txt"), []byte("deep-content"), 0644)
-	os.Symlink(extDir, filepath.Join(src, "linked-dir"))
+	if err := os.MkdirAll(extDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(extDir, "deep.txt"), []byte("deep-content"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(extDir, filepath.Join(src, "linked-dir")); err != nil {
+		t.Fatal(err)
+	}
 
 	// Copy with dereference
 	dst := filepath.Join(t.TempDir(), "copy")
@@ -1174,8 +1202,12 @@ func TestCopyDirDereferenced(t *testing.T) {
 
 func TestCopyDirDereferencedSkipsBrokenSymlinks(t *testing.T) {
 	src := t.TempDir()
-	os.WriteFile(filepath.Join(src, "good.txt"), []byte("good"), 0644)
-	os.Symlink("/nonexistent/path/file.txt", filepath.Join(src, "broken.txt"))
+	if err := os.WriteFile(filepath.Join(src, "good.txt"), []byte("good"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("/nonexistent/path/file.txt", filepath.Join(src, "broken.txt")); err != nil {
+		t.Fatal(err)
+	}
 
 	dst := filepath.Join(t.TempDir(), "copy")
 	if err := copyDirDereferenced(src, dst); err != nil {
@@ -1197,15 +1229,23 @@ func TestStageDirResolvingSymlinks(t *testing.T) {
 	src := t.TempDir()
 	external := t.TempDir()
 
-	os.WriteFile(filepath.Join(src, "config.json"), []byte(`{"key":"value"}`), 0644)
-	os.WriteFile(filepath.Join(external, "shared.json"), []byte(`{"shared":true}`), 0644)
-	os.Symlink(filepath.Join(external, "shared.json"), filepath.Join(src, "shared.json"))
+	if err := os.WriteFile(filepath.Join(src, "config.json"), []byte(`{"key":"value"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(external, "shared.json"), []byte(`{"shared":true}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(external, "shared.json"), filepath.Join(src, "shared.json")); err != nil {
+		t.Fatal(err)
+	}
 
 	staged, err := stageDirResolvingSymlinks(src)
 	if err != nil {
 		t.Fatalf("stageDirResolvingSymlinks failed: %v", err)
 	}
-	defer os.RemoveAll(staged)
+	defer func() {
+		_ = os.RemoveAll(staged)
+	}()
 
 	// Verify the staged directory contains dereferenced files
 	data, err := os.ReadFile(filepath.Join(staged, "shared.json"))

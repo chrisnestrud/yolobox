@@ -179,7 +179,9 @@ func doVersionCheck() {
 	if err != nil {
 		return // Silently fail
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != 200 {
 		return
@@ -200,8 +202,9 @@ func doVersionCheck() {
 		CheckedAt:     time.Now(),
 	}
 	if data, err := json.Marshal(cache); err == nil {
-		os.MkdirAll(filepath.Dir(cachePath), 0755)
-		os.WriteFile(cachePath, data, 0644)
+		if err := os.MkdirAll(filepath.Dir(cachePath), 0755); err == nil {
+			_ = os.WriteFile(cachePath, data, 0644)
+		}
 	}
 
 	showUpdateMessage(latestVersion)
@@ -894,7 +897,7 @@ func runCommand(cfg Config, command []string, interactive bool) error {
 	// Clean up temp files after the container exits, regardless of outcome
 	defer func() {
 		for _, p := range cleanupPaths {
-			os.RemoveAll(p)
+			_ = os.RemoveAll(p)
 		}
 	}()
 	return execRuntime(cfg.Runtime, args)
@@ -1436,7 +1439,7 @@ func uninstallYolobox(args []string) error {
 		yoloboxConfig := filepath.Join(configDir, "yolobox")
 		if _, err := os.Stat(yoloboxConfig); err == nil {
 			info("Removing %s...", yoloboxConfig)
-			os.RemoveAll(yoloboxConfig)
+			_ = os.RemoveAll(yoloboxConfig)
 		}
 	}
 
@@ -1448,7 +1451,7 @@ func uninstallYolobox(args []string) error {
 			if err == nil {
 				info("Removing Docker volumes...")
 				volumes := []string{"yolobox-home", "yolobox-cache", "yolobox-output"}
-				execCommand(runtime, append([]string{"volume", "rm", "-f"}, volumes...))
+				_ = execCommand(runtime, append([]string{"volume", "rm", "-f"}, volumes...))
 			}
 		}
 	}
@@ -1540,7 +1543,7 @@ func stageDirResolvingSymlinks(src string) (string, error) {
 		return "", err
 	}
 	if err := copyDirDereferenced(src, dst); err != nil {
-		os.RemoveAll(dst)
+		_ = os.RemoveAll(dst)
 		return "", err
 	}
 	return dst, nil
@@ -1645,7 +1648,7 @@ func findDockerSocket() (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("Docker socket not found. Is Docker running?")
+	return "", fmt.Errorf("docker socket not found. is Docker running?")
 }
 
 // findSSHAgentSocket returns the SSH agent socket path to use as a volume mount source.
@@ -1656,7 +1659,7 @@ func findSSHAgentSocket() (string, error) {
 		// Linux: SSH_AUTH_SOCK works as-is
 		sock := os.Getenv("SSH_AUTH_SOCK")
 		if sock == "" {
-			return "", fmt.Errorf("SSH_AUTH_SOCK not set")
+			return "", fmt.Errorf("ssh auth sock not set")
 		}
 		return sock, nil
 	}
@@ -1680,11 +1683,11 @@ func findSSHAgentSocket() (string, error) {
 		cmd := exec.CommandContext(ctx, "colima", "ssh", "--", "printenv", "SSH_AUTH_SOCK")
 		out, err := cmd.Output()
 		if err != nil {
-			return "", fmt.Errorf("SSH agent forwarding requires Colima's forwardAgent: true.\nEdit ~/.colima/default/colima.yaml, set forwardAgent: true, then: colima stop && colima start")
+			return "", fmt.Errorf("ssh agent forwarding requires Colima's forwardAgent: true.\nEdit ~/.colima/default/colima.yaml, set forwardAgent: true, then: colima stop && colima start")
 		}
 		sock := strings.TrimSpace(string(out))
 		if sock == "" {
-			return "", fmt.Errorf("SSH agent forwarding requires Colima's forwardAgent: true.\nEdit ~/.colima/default/colima.yaml, set forwardAgent: true, then: colima stop && colima start")
+			return "", fmt.Errorf("ssh agent forwarding requires Colima's forwardAgent: true.\nEdit ~/.colima/default/colima.yaml, set forwardAgent: true, then: colima stop && colima start")
 		}
 		return sock, nil
 	}
@@ -1877,22 +1880,29 @@ func buildRunArgs(cfg Config, projectDir string, command []string, interactive b
 		// avoid conflicts when multiple yolobox instances run concurrently)
 		if creds := getClaudeCredentials(); creds != "" {
 			tmpDir := filepath.Join(home, ".yolobox", "tmp")
-			os.MkdirAll(tmpDir, 0700)
-			f, err := os.CreateTemp(tmpDir, "claude-credentials-*.json")
-			if err == nil {
-				if _, writeErr := f.Write([]byte(creds)); writeErr == nil {
-					f.Close()
-					os.Chmod(f.Name(), 0600)
-					credsPath := f.Name()
-					cleanupPaths = append(cleanupPaths, credsPath)
-					if appleContainer {
-						appleContainerFiles[credsPath] = "claude/.credentials.json"
+			if err := os.MkdirAll(tmpDir, 0700); err == nil {
+				f, err := os.CreateTemp(tmpDir, "claude-credentials-*.json")
+				if err == nil {
+					if _, writeErr := f.Write([]byte(creds)); writeErr == nil {
+						if closeErr := f.Close(); closeErr == nil {
+							if chmodErr := os.Chmod(f.Name(), 0600); chmodErr == nil {
+								credsPath := f.Name()
+								cleanupPaths = append(cleanupPaths, credsPath)
+								if appleContainer {
+									appleContainerFiles[credsPath] = "claude/.credentials.json"
+								} else {
+									args = append(args, "-v", credsPath+":/host-claude/.credentials.json:ro")
+								}
+							} else {
+								_ = os.Remove(f.Name())
+							}
+						} else {
+							_ = os.Remove(f.Name())
+						}
 					} else {
-						args = append(args, "-v", credsPath+":/host-claude/.credentials.json:ro")
+						_ = f.Close()
+						_ = os.Remove(f.Name())
 					}
-				} else {
-					f.Close()
-					os.Remove(f.Name())
 				}
 			}
 		}
@@ -2311,7 +2321,9 @@ func prepareCustomImage(cfg *Config, projectDir string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp build dir: %w", err)
 	}
-	defer os.RemoveAll(buildDir)
+	defer func() {
+		_ = os.RemoveAll(buildDir)
+	}()
 
 	dockerfilePath := filepath.Join(buildDir, "Dockerfile")
 	if err := os.WriteFile(dockerfilePath, []byte(dockerfile), 0644); err != nil {
@@ -2416,15 +2428,21 @@ func preprocessClaudeConfig(srcPath string) string {
 		return ""
 	}
 	tmpDir := filepath.Join(home, ".yolobox", "tmp")
-	os.MkdirAll(tmpDir, 0700)
+	if err := os.MkdirAll(tmpDir, 0700); err != nil {
+		return ""
+	}
 	f, err := os.CreateTemp(tmpDir, "claude-config-*.json")
 	if err != nil {
 		return ""
 	}
-	defer f.Close()
 
 	if _, err := f.Write(processed); err != nil {
-		os.Remove(f.Name())
+		_ = f.Close()
+		_ = os.Remove(f.Name())
+		return ""
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(f.Name())
 		return ""
 	}
 
@@ -2510,7 +2528,9 @@ func upgradeYolobox() error {
 	if err != nil {
 		return fmt.Errorf("failed to check for updates: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != 200 {
 		return fmt.Errorf("failed to check for updates: HTTP %d", resp.StatusCode)
@@ -2549,7 +2569,9 @@ func upgradeYolobox() error {
 		if err != nil {
 			return fmt.Errorf("failed to download: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() {
+			_ = resp.Body.Close()
+		}()
 
 		if resp.StatusCode != 200 {
 			return fmt.Errorf("failed to download: HTTP %d", resp.StatusCode)
@@ -2573,21 +2595,23 @@ func upgradeYolobox() error {
 		tmpPath := tmpFile.Name()
 
 		_, err = io.Copy(tmpFile, resp.Body)
-		tmpFile.Close()
+		if closeErr := tmpFile.Close(); err == nil && closeErr != nil {
+			err = closeErr
+		}
 		if err != nil {
-			os.Remove(tmpPath)
+			_ = os.Remove(tmpPath)
 			return fmt.Errorf("failed to write binary: %w", err)
 		}
 
 		// Make executable
 		if err := os.Chmod(tmpPath, 0755); err != nil {
-			os.Remove(tmpPath)
+			_ = os.Remove(tmpPath)
 			return fmt.Errorf("failed to chmod: %w", err)
 		}
 
 		// Replace current binary
 		if err := os.Rename(tmpPath, execPath); err != nil {
-			os.Remove(tmpPath)
+			_ = os.Remove(tmpPath)
 			return fmt.Errorf("failed to replace binary: %w", err)
 		}
 
