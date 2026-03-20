@@ -45,6 +45,12 @@ yolobox claude    # Let it rip
 
 Or use any other AI tool: `yolobox codex`, `yolobox gemini`, `yolobox copilot`.
 
+Non-interactive invocations keep stdout and stderr separate, so shell redirection works as expected:
+
+```bash
+yolobox claude -- -p "Hello" 2>/dev/null
+```
+
 ## What's in the Box?
 
 The base image comes batteries-included:

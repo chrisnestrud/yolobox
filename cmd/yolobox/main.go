@@ -1792,6 +1792,58 @@ func appendRunFlag(args []string, flagName, value string) []string {
 	return append(args, "--"+flagName, value)
 }
 
+func shouldAttachTTY(command []string, explicitInteractive, stdinTTY, stdoutTTY bool) bool {
+	if explicitInteractive {
+		return true
+	}
+	if !stdinTTY || !stdoutTTY || len(command) == 0 {
+		return false
+	}
+
+	cmd := filepath.Base(command[0])
+	switch {
+	case isToolShortcut(cmd):
+		return toolInvocationNeedsTTY(cmd, command[1:])
+	case cmd == "bash" || cmd == "sh" || cmd == "zsh" || cmd == "fish":
+		return shellInvocationNeedsTTY(command[1:])
+	default:
+		return false
+	}
+}
+
+func shellInvocationNeedsTTY(args []string) bool {
+	if len(args) == 0 {
+		return true
+	}
+	for _, arg := range args {
+		if arg == "--command" {
+			return false
+		}
+		if !strings.HasPrefix(arg, "-") {
+			continue
+		}
+		if strings.Contains(arg, "i") {
+			return true
+		}
+		if strings.Contains(arg, "c") {
+			return false
+		}
+	}
+	return true
+}
+
+func toolInvocationNeedsTTY(tool string, args []string) bool {
+	switch tool {
+	case "claude":
+		for _, arg := range args {
+			if arg == "-p" || arg == "--print" {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 func buildRunArgs(cfg Config, projectDir string, command []string, interactive bool) ([]string, []string, error) {
 	absProject, err := filepath.Abs(projectDir)
 	if err != nil {
@@ -1817,11 +1869,11 @@ func buildRunArgs(cfg Config, projectDir string, command []string, interactive b
 		args = append(args, "--userns=keep-id:uid=1000,gid=1000")
 	}
 
-	// Add -it if explicitly interactive, or if stdin/stdout are both terminals
-	// This allows "yolobox run claude" to work interactively while still
-	// supporting piping (e.g., "echo foo | yolobox run cat")
-	isTTY := term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd()))
-	if interactive || isTTY {
+	// Docker/Podman PTYs merge stdout/stderr, so only attach a TTY when the
+	// command is actually interactive.
+	stdinTTY := term.IsTerminal(int(os.Stdin.Fd()))
+	stdoutTTY := term.IsTerminal(int(os.Stdout.Fd()))
+	if shouldAttachTTY(command, interactive, stdinTTY, stdoutTTY) {
 		args = append(args, "-it")
 	}
 

@@ -394,6 +394,70 @@ func TestBuildRunArgsNonInteractive(t *testing.T) {
 	}
 }
 
+func TestShouldAttachTTY(t *testing.T) {
+	tests := []struct {
+		name                string
+		command             []string
+		explicitInteractive bool
+		stdinTTY            bool
+		stdoutTTY           bool
+		want                bool
+	}{
+		{
+			name:                "explicit interactive shell",
+			command:             []string{"bash"},
+			explicitInteractive: true,
+			stdinTTY:            false,
+			stdoutTTY:           false,
+			want:                true,
+		},
+		{
+			name:      "claude shortcut interactive",
+			command:   []string{"claude"},
+			stdinTTY:  true,
+			stdoutTTY: true,
+			want:      true,
+		},
+		{
+			name:      "claude print mode keeps streams separate",
+			command:   []string{"claude", "-p", "hello"},
+			stdinTTY:  true,
+			stdoutTTY: true,
+			want:      false,
+		},
+		{
+			name:      "shell via run is interactive on terminal",
+			command:   []string{"bash"},
+			stdinTTY:  true,
+			stdoutTTY: true,
+			want:      true,
+		},
+		{
+			name:      "scripted shell stays non interactive",
+			command:   []string{"bash", "-lc", "echo hello"},
+			stdinTTY:  true,
+			stdoutTTY: true,
+			want:      false,
+		},
+		{
+			name:      "generic command stays non interactive",
+			command:   []string{"echo", "hello"},
+			stdinTTY:  true,
+			stdoutTTY: true,
+			want:      false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := shouldAttachTTY(tt.command, tt.explicitInteractive, tt.stdinTTY, tt.stdoutTTY)
+			if got != tt.want {
+				t.Fatalf("shouldAttachTTY(%v, %t, %t, %t) = %t, want %t", tt.command, tt.explicitInteractive, tt.stdinTTY, tt.stdoutTTY, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestBuildRunArgsScratch(t *testing.T) {
 	cfg := Config{
 		Image:   "test-image",

@@ -90,3 +90,4 @@ Also update [README.md](README.md) when user-facing behavior changes.
 - Version comparisons must be semantic, not lexical. Also stamp source-built binaries with a real version string, or update checks and support output become misleading.
 - `install.sh` runs under `set -euo pipefail`, so any best-effort network probe must explicitly tolerate failure. Otherwise the release lookup exits the script before the source-build fallback can run.
 - Help text for auto-forwarded env vars must be generated from `autoPassthroughEnvVars`. Hardcoded copies drift and create auth debugging noise.
+- Allocating a container TTY (`-t`) merges stdout and stderr at the PTY boundary. Only enable TTY for genuinely interactive commands, or host-side redirection and piping will behave incorrectly.
