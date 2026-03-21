@@ -337,7 +337,7 @@ RUN mkdir -p /host-claude /host-gemini /host-git /host-agent-instructions /host-
     '' \
     '# Re-exec with refreshed groups if we added docker group above' \
     'if [ "$_YOLOBOX_NEED_REGROUP" = "1" ]; then' \
-    '    exec sudo -E setpriv --reuid="$(id -u)" --regid="$(id -g)" --init-groups -- "$@"' \
+    '    exec sudo -E --preserve-env=PATH setpriv --reuid="$(id -u)" --regid="$(id -g)" --init-groups -- "$@"' \
     'fi' \
     'exec "$@"' \
     > /usr/local/bin/yolobox-entrypoint.sh && \
