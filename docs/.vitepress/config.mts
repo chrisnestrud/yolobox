@@ -12,10 +12,18 @@ export default defineConfig({
 
   head: [
     ['link', { rel: 'icon', href: '/favicon.svg' }],
+    ['meta', { property: 'og:type', content: 'website' }],
     ['meta', { property: 'og:title', content: 'yolobox' }],
     ['meta', { property: 'og:description', content: 'Run AI coding agents in a sandboxed container. Your home directory stays home.' }],
     ['meta', { property: 'og:url', content: 'https://yolobox.dev' }],
+    ['meta', { property: 'og:image', content: 'https://yolobox.dev/social-card.png' }],
+    ['meta', { property: 'og:image:width', content: '1200' }],
+    ['meta', { property: 'og:image:height', content: '630' }],
+    ['meta', { property: 'og:image:alt', content: 'yolobox social card with the ASCII logo and tagline.' }],
     ['meta', { name: 'twitter:card', content: 'summary_large_image' }],
+    ['meta', { name: 'twitter:title', content: 'yolobox' }],
+    ['meta', { name: 'twitter:description', content: 'Run AI coding agents in a sandboxed container. Your home directory stays home.' }],
+    ['meta', { name: 'twitter:image', content: 'https://yolobox.dev/social-card.png' }],
   ],
 
   appearance: 'dark',
