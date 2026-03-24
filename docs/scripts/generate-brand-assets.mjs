@@ -47,16 +47,16 @@ async function generateLightLogo(darkLogoBuffer) {
     const b = data[i + 2]
 
     if (r > 220 && g > 90 && b < 40) {
-      data[i] = 43
-      data[i + 1] = 26
-      data[i + 2] = 14
+      data[i] = 255
+      data[i + 1] = 122
+      data[i + 2] = 10
       continue
     }
 
     if (r > 110 && g > 35 && b < 30) {
-      data[i] = 232
-      data[i + 1] = 139
-      data[i + 2] = 45
+      data[i] = 43
+      data[i + 1] = 26
+      data[i + 2] = 14
       continue
     }
 
