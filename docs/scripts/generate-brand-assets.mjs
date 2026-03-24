@@ -50,6 +50,7 @@ async function generateLightLogo(darkLogoBuffer) {
       data[i] = 255
       data[i + 1] = 122
       data[i + 2] = 10
+      data[i + 3] = 255
       continue
     }
 
@@ -57,12 +58,14 @@ async function generateLightLogo(darkLogoBuffer) {
       data[i] = 43
       data[i + 1] = 26
       data[i + 2] = 14
+      data[i + 3] = 255
       continue
     }
 
     data[i] = 255
-    data[i + 1] = 247
-    data[i + 2] = 236
+    data[i + 1] = 255
+    data[i + 2] = 255
+    data[i + 3] = 0
   }
 
   return sharp(data, { raw: info }).png().toBuffer()
